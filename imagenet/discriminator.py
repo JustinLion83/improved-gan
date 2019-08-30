@@ -2,6 +2,10 @@ import tensorflow as tf
 import numpy as np
 from ops import lrelu, conv2d, linear
 
+'''
+一次給D看一個batch的圖片, 而非單張圖片, 能阻止G在batch中產出過於相似的圖(Mode Collapse)
+self.batch_size是batch_size的一半(真+假)
+'''
 def discriminator(self, image, reuse=False, y=None, prefix=""):
 
     num_classes = 1001
@@ -10,19 +14,45 @@ def discriminator(self, image, reuse=False, y=None, prefix=""):
         tf.get_variable_scope().reuse_variables()
 
     batch_size = int(image.get_shape()[0])
-    assert batch_size == 2 * self.batch_size
+    assert batch_size == 2 * self.batch_size # 確保batch_size是self.batch_size的兩倍
 
     """
+    pos, neg分別表示真實(正確樣本, 或者可稱作範例)與虛假(G產出的Fake_image)
+    L1距離: 曼哈頓距離(絕對值差距)
+    L2距離: 歐氏距離
+    
     # L1 distance to average value of corresponding pixel in positive and negative batch
     # Included as a feature to prevent early mode collapse
+    
+    # tf.slice(inputs, begin, size, name)介紹
+    作用：从列表、数组、张量等对象中抽取一部分数据
+
+    begin和size是两个多维列表，他们共同决定了要抽取的数据的开始和结束位置
+    begin表示从inputs的哪几个维度上的哪个元素开始抽取 
+    size表示在inputs的各个维度上抽取的元素个数
+    若begin[]或size[]中出现-1,表示抽取对应维度上的所有元素
+    #################################################################################################
+    import tensorflow as tf  
+    import numpy as np  
+    x=[[1,2,3],[4,5,6]]  
+    with tf.Session() as sess:
+         begin = [0,1]  # 从x[0,1],即元素2开始抽取
+         size  = [2,1]  # 从x[0,1]开始，对x的第一个维度（row）抽取2个元素，在对x的第二个维度（col）抽取1个元素
+         print sess.run(tf.slice(x,begin,size))  # 输出[[2 5]]
+    #################################################################################################
     b, r, c, ch = [int(e) for e in image.get_shape()]
+    
+    # 擷取出真與假
     pos = tf.slice(image, [0, 0, 0, 0], [self.batch_size, r, c, ch])
     neg = tf.slice(image, [self.batch_size, 0, 0, 0], [self.batch_size, r, c, ch])
+    
+    # 壓扁成2D
     pos = tf.reshape(pos, [self.batch_size, -1])
     neg = tf.reshape(neg, [self.batch_size, -1])
+    
     mean_pos = tf.reduce_mean(pos, 0, keep_dims=True)
     mean_neg = tf.reduce_mean(neg, 0, keep_dims=True)
-
+    
     # difference from mean, with each example excluding itself from the mean
     pos_diff_pos = (1. + 1. / (self.batch_size - 1.)) * pos - mean_pos
     pos_diff_neg = pos - mean_neg
